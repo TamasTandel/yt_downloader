@@ -32,7 +32,7 @@ app.use('/downloads', express.static(downloadsPath));
 
 app.post('/api/video-info', (req, res) => {
     const { url } = req.body;
-    execFile('C:/Users/tamas/AppData/Local/Programs/Python/Python314/python.exe', ['controllers/youtubeController.py', url], (error, stdout, stderr) => {
+    execFile('python3', ['controllers/youtubeController.py', url], (error, stdout, stderr) => {
         if (error) {
             console.error('Python error:', stderr);
             return res.status(500).json({ error: stderr });
