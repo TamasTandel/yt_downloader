@@ -12,10 +12,12 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${port}`;
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// Create downloads folder if it doesn't exist
 const downloadsPath = path.join(__dirname, 'downloads');
 if (!fs.existsSync(downloadsPath)) fs.mkdirSync(downloadsPath);
 app.use('/downloads', express.static(downloadsPath));
 
+// ✅ Merge video and audio using FFmpeg
 app.post('/api/merge', (req, res) => {
     const { videoUrl, audioUrl } = req.body;
 
@@ -36,6 +38,7 @@ app.post('/api/merge', (req, res) => {
     });
 });
 
+// ✅ Extract video/audio stream info using yt-dlp
 app.post('/api/video-info', (req, res) => {
     const { url } = req.body;
 
@@ -51,7 +54,6 @@ app.post('/api/video-info', (req, res) => {
 
         try {
             const result = JSON.parse(stdout);
-            result.downloadUrl = `${BASE_URL}/downloads/${encodeURIComponent(result.video_filename)}`;
             res.json(result);
         } catch (parseError) {
             console.error('JSON parse error:', parseError);
@@ -60,6 +62,7 @@ app.post('/api/video-info', (req, res) => {
     });
 });
 
+// ✅ Check if FFmpeg is installed
 app.get('/api/check-ffmpeg', (req, res) => {
     exec('ffmpeg -version', (error, stdout, stderr) => {
         if (error) {

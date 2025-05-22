@@ -9,9 +9,7 @@ def main():
         return
 
     url = sys.argv[1]
-
     cookies_path = '/etc/secrets/cookies_txt'
-    print("Cookies file exists:", os.path.exists(cookies_path), file=sys.stderr)
 
     ydl_opts = {
         'quiet': True,
@@ -59,8 +57,7 @@ def main():
                 'thumbnail': info.get('thumbnail'),
                 'video_audio_formats': video_audio_formats,
                 'video_only_formats': video_only_formats,
-                'audio_only_formats': audio_only_formats,
-                'video_filename': f"{info.get('title', 'video').replace(' ', '_')}.mp4"
+                'audio_only_formats': audio_only_formats
             }
 
             print(json.dumps(result))
