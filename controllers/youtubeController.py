@@ -5,8 +5,7 @@ from yt_dlp import YoutubeDL
 
 url = sys.argv[1]
 
-# Debug: check if cookies file exists
-print("Checking if cookies file exists:", os.path.exists('/etc/secrets/cookies_txt'))
+print("Cookies file exists:", os.path.exists('/etc/secrets/cookies_txt'), file=sys.stderr)
 
 ydl_opts = {
     'quiet': True,

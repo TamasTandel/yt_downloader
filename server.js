@@ -10,7 +10,7 @@ const port = process.env.PORT || 5000;
 const BASE_URL = process.env.BASE_URL;
 
 app.use(cors({
-    origin: 'https://yt-download-fron.vercel.app'
+    origin: ['https://yt-download-fron.vercel.app']
 }));
 app.use(express.json());
 
@@ -49,6 +49,15 @@ app.post('/api/video-info', (req, res) => {
             console.error('JSON parse error:', parseError);
             res.status(500).json({ error: 'Failed to parse Python output' });
         }
+    });
+});
+
+app.get('/api/check-ffmpeg', (req, res) => {
+    exec('ffmpeg -version', (error, stdout, stderr) => {
+        if (error) {
+            return res.status(500).json({ error: 'FFmpeg not installed', details: stderr });
+        }
+        res.json({ message: 'FFmpeg is installed', version: stdout.split('\n')[0] });
     });
 });
 
