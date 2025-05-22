@@ -5,4 +5,4 @@ downloads/
 echo "controllers/cookies.txt" >> .gitignore
 git add .gitignore
 git commit -m "Add cookies.txt to .gitignore"
-controllers/cookies.txt
+controllers/cookies_txt
