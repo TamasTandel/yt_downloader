@@ -10,10 +10,8 @@ def main():
 
     url = sys.argv[1]
 
-    # Optional cookies file path
-    cookies_path = os.path.join(os.path.dirname(__file__), '../controllers/cookies.txt')
+    cookies_path = os.getenv('COOKIES_PATH', os.path.join(os.path.dirname(__file__), '../controllers/cookies_txt'))
 
-    # yt-dlp options with TV client spoofing and optional cookies
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
