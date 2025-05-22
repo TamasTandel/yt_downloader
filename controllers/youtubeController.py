@@ -8,7 +8,7 @@ ydl_opts = {
     'quiet': True,
     'skip_download': True,
     'forcejson': True,
-    'cookies': 'controllers/cookies_txt'
+    'cookies': '/etc/secrets/cookies_txt'
 }
 
 with YoutubeDL(ydl_opts) as ydl:
