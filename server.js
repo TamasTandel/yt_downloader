@@ -10,7 +10,7 @@ const port = process.env.PORT || 5000;
 const BASE_URL = process.env.BASE_URL;
 
 app.use(cors({
-    origin: ['https://yt-download-fron.vercel.app']
+    origin: '*'
 }));
 app.use(express.json());
 
