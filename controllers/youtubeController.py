@@ -9,18 +9,26 @@ def main():
         return
 
     url = sys.argv[1]
-    cookies_path = '/etc/secrets/cookies_txt'
 
+    # Optional cookies file path
+    cookies_path = os.path.join(os.path.dirname(__file__), '../controllers/cookies.txt')
+
+    # yt-dlp options with TV client spoofing and optional cookies
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
         'forcejson': True,
+        'age_limit': 99,
+        'extractor_args': {
+            'youtube': ['player_client=tvhtml5']
+        },
         'cookies': cookies_path if os.path.exists(cookies_path) else None
     }
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+
             video_audio_formats = []
             video_only_formats = []
             audio_only_formats = []
