@@ -1,7 +1,8 @@
 {
-  "name": "backend",
+  "name": "youtube-downloader-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -10,9 +11,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.6.8",
     "cors": "^2.8.5",
+    "express": "^4.18.3",
     "dotenv": "^16.5.0",
-    "express": "^5.1.0",
     "nodemon": "^3.1.10",
     "sys": "^0.0.1"
   }
