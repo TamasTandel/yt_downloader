@@ -12,9 +12,25 @@ const __dirname = path.dirname(__filename);
 const execAsync = promisify(exec);
 const app = express();
 const port = process.env.PORT || 5000;
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+const BASE_URL = process.env.BASE_URL ;
 
-app.use(cors({ origin: '*' }));
+const allowedOrigins = [
+    'https://yt-download-fron.vercel.app',  // Your production frontend
+    'http://localhost:3000'  // Your local frontend
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // allow requests with no origin (like mobile apps or curl requests)
+        if(!origin) return callback(null, true);
+        
+        if(allowedOrigins.indexOf(origin) === -1){
+            return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true
+}));
 app.use(express.json());
 
 const downloadsPath = path.join(__dirname, 'downloads');
@@ -22,35 +38,73 @@ const tempPath = path.join(__dirname, 'temp');
 
 // Create directories if they don't exist
 [downloadsPath, tempPath].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`Created directory: ${dir}`);
+        } catch (err) {
+            console.error(`Error creating directory ${dir}:`, err);
+        }
+    }
 });
 
-app.use('/downloads', express.static(downloadsPath));
+// Serve static files with proper headers and error handling
+app.use('/downloads', (req, res, next) => {
+    console.log('Download request for:', req.url);
+    const filePath = path.join(downloadsPath, req.url);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+        console.error('File not found:', filePath);
+        return res.status(404).json({ error: 'File not found' });
+    }
 
-// Helper function to download file from URL
-async function downloadFile(url, outputPath) {
-    return new Promise((resolve, reject) => {
-        https.get(url, response => {
-            if (response.statusCode !== 200) {
-                reject(new Error(`Failed to download: ${response.statusCode}`));
-                return;
-            }
-            const fileStream = fs.createWriteStream(outputPath);
-            response.pipe(fileStream);
-            fileStream.on('finish', () => {
-                fileStream.close();
-                resolve();
-            });
-        }).on('error', reject);
+    // Log file details
+    const stats = fs.statSync(filePath);
+    console.log('Serving file:', {
+        path: filePath,
+        size: stats.size,
+        created: stats.birthtime
     });
+
+    // Set headers for file download
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(req.url)}"`);
+    
+    // Stream the file
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (error) => {
+        console.error('Error streaming file:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Error streaming file' });
+        }
+    });
+    
+    stream.pipe(res);
+});
+
+// Helper function to ensure directory exists
+function ensureDirectoryExists(dir) {
+    if (!fs.existsSync(dir)) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`Created directory: ${dir}`);
+            return true;
+        } catch (err) {
+            console.error(`Error creating directory ${dir}:`, err);
+            return false;
+        }
+    }
+    return true;
 }
 
-// Clean up temporary files
+// Clean up temporary files with logging
 function cleanupTempFiles(files) {
     files.forEach(file => {
         if (fs.existsSync(file)) {
             try {
                 fs.unlinkSync(file);
+                console.log(`Cleaned up file: ${file}`);
             } catch (err) {
                 console.error(`Error deleting file ${file}:`, err);
             }
@@ -68,11 +122,15 @@ app.post('/api/merge', async (req, res) => {
 
     console.log('Received merge request:', { videoUrl, audioUrl });
 
+    // Ensure temp directory exists
+    if (!ensureDirectoryExists(tempPath)) {
+        return res.status(500).json({ error: 'Failed to create temporary directory' });
+    }
+
     const timestamp = Date.now();
     const videoFile = path.join(tempPath, `video_${timestamp}.mp4`);
     const audioFile = path.join(tempPath, `audio_${timestamp}.m4a`);
-    const outputFile = `merged_${timestamp}.mp4`;
-    const outputPath = path.join(downloadsPath, outputFile);
+    const outputFile = path.join(tempPath, `merged_${timestamp}.mp4`);
 
     try {
         // Extract video ID from the URL
@@ -98,77 +156,99 @@ app.post('/api/merge', async (req, res) => {
             outputFile
         });
 
-        // Download video file using yt-dlp with the specific format
+        // Download video file
         console.log('Downloading video file...');
         const baseUrl = `https://www.youtube.com/watch?v=${videoId}`;
         const videoCmd = `yt-dlp -f ${videoFormatId} -o "${videoFile}" "${baseUrl}"`;
-        console.log('Video download command:', videoCmd);
         await execAsync(videoCmd);
         
         if (!fs.existsSync(videoFile)) {
             throw new Error('Failed to download video file');
         }
+        console.log('Video file downloaded successfully');
 
-        // Download audio file using yt-dlp with the specific format
+        // Download audio file
         console.log('Downloading audio file...');
         const audioCmd = `yt-dlp -f ${audioFormatId} -o "${audioFile}" "${baseUrl}"`;
-        console.log('Audio download command:', audioCmd);
         await execAsync(audioCmd);
 
         if (!fs.existsSync(audioFile)) {
             throw new Error('Failed to download audio file');
         }
+        console.log('Audio file downloaded successfully');
 
-        // Get video information
-        console.log('Getting video information...');
-        const videoInfo = await execAsync(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of json "${videoFile}"`);
-        const videoData = JSON.parse(videoInfo.stdout);
-        const videoStream = videoData.streams[0];
+        // Merge files using FFmpeg
+        console.log('Starting merge...');
+        const mergeCmd = `ffmpeg -i "${videoFile}" -i "${audioFile}" -c:v copy -c:a aac -strict experimental -b:a 128k -shortest "${outputFile}"`;
+        try {
+            await execAsync(mergeCmd);
+            console.log('Merge completed successfully');
 
-        // Calculate optimal bitrate for audio (based on video quality)
-        const height = videoStream?.height || 720;
-        const audioBitrate = height >= 1080 ? '192k' : '128k';
+            if (!fs.existsSync(outputFile)) {
+                throw new Error('Failed to create merged file');
+            }
 
-        // Merge files using FFmpeg with optimal settings
-        console.log('Merging files...');
-        const mergeCmd = `ffmpeg -i "${videoFile}" -i "${audioFile}" -c:v copy -c:a aac -b:a ${audioBitrate} -movflags +faststart -y "${outputPath}"`;
-        console.log('Merge command:', mergeCmd);
-        await execAsync(mergeCmd);
+            const stats = fs.statSync(outputFile);
+            if (stats.size === 0) {
+                throw new Error('Merged file is empty');
+            }
 
-        // Verify the output file exists and has a non-zero size
-        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
-            throw new Error('Failed to create merged video file');
+            console.log('Output file created:', {
+                path: outputFile,
+                size: `${(stats.size / (1024 * 1024)).toFixed(2)} MB`
+            });
+
+            // Set response headers
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Disposition', `attachment; filename="merged_${timestamp}.mp4"`);
+            res.setHeader('Content-Length', stats.size);
+
+            // Stream the file to response
+            const fileStream = fs.createReadStream(outputFile);
+            
+            // Add error handler for the file stream
+            fileStream.on('error', (error) => {
+                console.error('File stream error:', error);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Streaming failed', details: error.message });
+                }
+                cleanupTempFiles([videoFile, audioFile, outputFile]);
+            });
+
+            // Stream the file
+            fileStream.pipe(res);
+
+            // Clean up when streaming is done
+            res.on('finish', () => {
+                console.log('Streaming completed successfully');
+                cleanupTempFiles([videoFile, audioFile, outputFile]);
+            });
+
+            // Handle client disconnect
+            res.on('close', () => {
+                console.log('Client disconnected');
+                cleanupTempFiles([videoFile, audioFile, outputFile]);
+                fileStream.destroy();
+            });
+
+        } catch (ffmpegError) {
+            console.error('FFmpeg error:', ffmpegError);
+            cleanupTempFiles([videoFile, audioFile, outputFile]);
+            throw new Error(`FFmpeg merge failed: ${ffmpegError.message}`);
         }
 
-        // Get the size of the merged file
-        const stats = fs.statSync(outputPath);
-        const fileSizeInBytes = stats.size;
-        const fileSizeInMB = fileSizeInBytes / (1024 * 1024);
-
-        // Clean up temporary files
-        cleanupTempFiles([videoFile, audioFile]);
-
-        console.log('Merge successful:', {
-            outputFile,
-            size: fileSizeInMB.toFixed(2) + ' MB'
-        });
-
-        res.json({ 
-            downloadUrl: `${BASE_URL}/downloads/${outputFile}`,
-            message: 'Merge successful',
-            fileSize: fileSizeInBytes,
-            fileSizeMB: fileSizeInMB.toFixed(2),
-            fileName: outputFile
-        });
     } catch (error) {
         console.error('Merge error:', error);
-        // Clean up any temporary files if they exist
-        cleanupTempFiles([videoFile, audioFile, outputPath]);
-        res.status(500).json({ 
-            error: 'Failed to merge video and audio', 
-            details: error.message,
-            command: error.cmd // Include the failed command for debugging
-        });
+        // Clean up any temporary files
+        cleanupTempFiles([videoFile, audioFile, outputFile]);
+        
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                error: 'Failed to merge video and audio', 
+                details: error.message,
+                command: error.cmd
+            });
+        }
     }
 });
 
@@ -182,10 +262,10 @@ app.post('/api/video-info', (req, res) => {
 
     console.log('Processing video info request:', { url });
 
-    // Use the full path to Python executable
-    const pythonPath = 'C:\\Users\\tamas\\AppData\\Local\\Programs\\Python\\Python314\\python.exe';
+    // Use 'python3' command which should be available in both local and production
+    const pythonCommand = process.env.NODE_ENV === 'production' ? 'python3' : 'python';
     
-    execFile(pythonPath, ['controllers/youtubeController.py', url], (error, stdout, stderr) => {
+    execFile(pythonCommand, ['controllers/youtubeController.py', url], (error, stdout, stderr) => {
         // Log progress messages from stderr
         if (stderr) {
             try {
@@ -215,22 +295,9 @@ app.post('/api/video-info', (req, res) => {
                 return res.status(400).json(result);
             }
 
-            // Validate the required fields
-            if (!result.title || !result.video_only_formats || !result.audio_only_formats) {
-                console.error('Invalid response format:', result);
-                return res.status(500).json({ 
-                    error: 'Invalid video information format',
-                    details: 'The video information is incomplete or invalid.'
-                });
-            }
-
             console.log('Successfully processed video:', {
                 title: result.title,
-                formats: {
-                    video: result.video_only_formats.length,
-                    audio: result.audio_only_formats.length,
-                    combined: result.video_audio_formats.length
-                }
+                formats: result.formats?.length || 0
             });
 
             res.json(result);
